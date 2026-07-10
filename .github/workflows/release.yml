@@ -1,27 +1,51 @@
 name: Release
 
-# 打 tag（如 v1.0.1）后自动构建 Windows / macOS 安装包并发布到 GitHub Release。
-# 触发前请确认：
-#   1. package.json 的 version 已与 tag 一致（可用 `npm version patch` 自动完成并打 tag）。
-#   2. electron-builder.yml 与 dev-app-update.yml 里的 owner/repo 已替换为真实值。
 on:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write # electron-builder 通过 GITHUB_TOKEN 创建 Release 需要写权限
+  contents: write # 确保有权限创建和修改 Release
 
 jobs:
-  release:
+  # ==================== 阶段一：创建唯一的 Release 草稿 ====================
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_draft.outputs.id }} # 把创建好的 Release ID 输出给后面的打包任务
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release Draft
+        id: create_draft
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // 使用 GitHub 官方 API 创建一个草稿
+            const response = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: context.ref.replace('refs/tags/', ''),
+              draft: true, // 保持为草稿状态
+              prerelease: false
+            });
+            return response.data.id;
+
+  # ==================== 阶段二：并行打包并上传到同一个草稿 ====================
+  build-and-publish:
+    needs: create-release # 核心：必须等阶段一创建好草稿后，打包任务才能启动
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            build: npm run build && npx electron-builder --win --publish always
+            # 删除了 --publish always，改用 electron-builder 本身的打包，后续通过环境变量控制上传
+            build: npm run build && npx electron-builder --win
           - os: macos-latest
-            build: npm run build && npx electron-builder --mac --publish always
+            build: npm run build && npx electron-builder --mac
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -30,13 +54,16 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build & publish
+      - name: Build & Upload to existing Release
         run: ${{ matrix.build }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 【极其重要】这两个环境变量会告诉 electron-builder：
+          # 不要自己建 Release！直接把我打包好的资产，塞进指定 ID 的那个已有草稿里！
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
