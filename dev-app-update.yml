@@ -1,0 +1,5 @@
+# 开发期联调更新用（electron-updater 默认仅打包后生效，updater.ts 在 dev 下指向此文件）。
+provider: github
+owner: ltcooooooo
+repo: flashlate
+updaterCacheDirName: flashlate-updater

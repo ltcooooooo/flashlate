@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    />
+    <style>
+      /* 用 CSS 变量控制选区可见性（移植自 PoC）：默认干净态，JS 只改变量，杜绝闪烁。 */
+      :root {
+        --dim-display: block;
+        --sel-display: none;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        cursor: crosshair;
+        user-select: none;
+        background: transparent;
+      }
+      #dim {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: var(--dim-display);
+      }
+      #sel {
+        position: fixed;
+        display: var(--sel-display);
+        border: 1px solid #2d8cff;
+        box-shadow: 0 0 0 100000px rgba(0, 0, 0, 0.35);
+      }
+      #hint {
+        position: fixed;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        background: rgba(0, 0, 0, 0.65);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font: 13px/1 system-ui, sans-serif;
+        pointer-events: none;
+      }
+      #info {
+        position: fixed;
+        display: none;
+        color: #fff;
+        background: #2d8cff;
+        font: 12px/1 system-ui, sans-serif;
+        padding: 3px 6px;
+        border-radius: 3px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="dim"></div>
+    <div id="sel"></div>
+    <div id="hint">拖拽框选要识别的区域 · 松开完成 · Esc 取消</div>
+    <div id="info"></div>
+    <script>
+      const root = document.documentElement
+      const sel = document.getElementById('sel')
+      const info = document.getElementById('info')
+      let sx = 0,
+        sy = 0,
+        drag = false
+
+      // 全局，供主进程 executeJavaScript('reset()') 调用
+      function reset() {
+        drag = false
+        root.style.removeProperty('--dim-display')
+        root.style.removeProperty('--sel-display')
+        info.style.display = 'none'
+        sel.style.left = ''
+        sel.style.top = ''
+        sel.style.width = ''
+        sel.style.height = ''
+      }
+
+      addEventListener('mousedown', (e) => {
+        drag = true
+        sx = e.clientX
+        sy = e.clientY
+        info.style.display = 'block'
+        info.textContent = '0 × 0'
+        info.style.left = e.clientX + 'px'
+        info.style.top = (e.clientY - 22 < 0 ? e.clientY + 4 : e.clientY - 22) + 'px'
+      })
+      addEventListener('mousemove', (e) => {
+        if (!drag) return
+        if (root.style.getPropertyValue('--sel-display') !== 'block') {
+          root.style.setProperty('--dim-display', 'none')
+          root.style.setProperty('--sel-display', 'block')
+          sel.style.left = sx + 'px'
+          sel.style.top = sy + 'px'
+          sel.style.width = '0px'
+          sel.style.height = '0px'
+        }
+        const x = Math.min(sx, e.clientX),
+          y = Math.min(sy, e.clientY)
+        const w = Math.abs(e.clientX - sx),
+          h = Math.abs(e.clientY - sy)
+        sel.style.left = x + 'px'
+        sel.style.top = y + 'px'
+        sel.style.width = w + 'px'
+        sel.style.height = h + 'px'
+        info.textContent = w + ' × ' + h
+        info.style.left = x + 'px'
+        info.style.top = (y - 22 < 0 ? y + 4 : y - 22) + 'px'
+      })
+      addEventListener('mouseup', (e) => {
+        if (!drag) return
+        drag = false
+        const x = Math.min(sx, e.clientX),
+          y = Math.min(sy, e.clientY)
+        const w = Math.abs(e.clientX - sx),
+          h = Math.abs(e.clientY - sy)
+        window.flash.sendRegion({ x, y, width: w, height: h })
+      })
+      addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') window.flash.sendRegion(null)
+      })
+    </script>
+  </body>
+</html>

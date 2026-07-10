@@ -1,0 +1,42 @@
+name: Release
+
+# 打 tag（如 v1.0.1）后自动构建 Windows / macOS 安装包并发布到 GitHub Release。
+# 触发前请确认：
+#   1. package.json 的 version 已与 tag 一致（可用 `npm version patch` 自动完成并打 tag）。
+#   2. electron-builder.yml 与 dev-app-update.yml 里的 owner/repo 已替换为真实值。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # electron-builder 通过 GITHUB_TOKEN 创建 Release 需要写权限
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build: npm run build && npx electron-builder --win --publish always
+          - os: macos-latest
+            build: npm run build && npx electron-builder --mac --publish always
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish
+        run: ${{ matrix.build }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
